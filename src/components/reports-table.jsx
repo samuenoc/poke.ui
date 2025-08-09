@@ -1,16 +1,62 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Download, RefreshCw, ArrowUpDown } from "lucide-react"
+import { Download, RefreshCw, ArrowUpDown, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
+// Modal personalizado para confirmación de eliminación
+function DeleteConfirmationModal({ isOpen, onClose, onConfirm, reportId, pokemonType, isDeleting }) {
+  if (!isOpen) return null
 
-export default function ReportsTable({ reports, loading, onRefresh, onDownload }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      
+      {/* Modal */}
+      <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            ¿Estás seguro?
+          </h3>
+          <p className="text-sm text-gray-600">
+            Esta acción no se puede deshacer. Se eliminará permanentemente el reporte{" "}
+            <span className="font-semibold">{reportId}</span>{" "}
+            del tipo{" "}
+            <span className="font-semibold capitalize">{pokemonType}</span>.
+          </p>
+        </div>
+        
+        <div className="flex gap-3 justify-end">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={isDeleting}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            {isDeleting ? "Eliminando..." : "Eliminar"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function ReportsTable({ reports, loading, onRefresh, onDownload, onDelete }) {
   const [refreshing, setRefreshing] = useState(false)
   const [sortedReports, setSortedReports] = useState([])
   const [sortDirection, setSortDirection] = useState("desc") // "desc" para descendente (más reciente primero)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [reportToDelete, setReportToDelete] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   // Ordenar los reportes cuando cambian o cuando cambia la dirección de ordenamiento
   useEffect(() => {
@@ -103,6 +149,44 @@ export default function ReportsTable({ reports, loading, onRefresh, onDownload }
     }
   }
 
+  // Abrir el diálogo de confirmación de eliminación
+  const handleDeleteClick = (report) => {
+    setReportToDelete(report)
+    setDeleteDialogOpen(true)
+  }
+
+  // Confirmar la eliminación
+  const handleConfirmDelete = async () => {
+    if (!reportToDelete || !onDelete) return
+
+    try {
+      setDeleting(true)
+      const reportId = getPropertyValue(reportToDelete, "reportId")
+      
+      await onDelete(reportId)
+      
+      toast.success("Reporte eliminado correctamente")
+      
+      // Cerrar el diálogo y limpiar el estado
+      setDeleteDialogOpen(false)
+      setReportToDelete(null)
+      
+      // Refrescar la tabla para mostrar los cambios
+      await handleRefresh()
+    } catch (error) {
+      console.error("Error deleting report:", error)
+      toast.error("No se pudo eliminar el reporte. Por favor, intenta de nuevo.")
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  // Cancelar la eliminación
+  const handleCancelDelete = () => {
+    setDeleteDialogOpen(false)
+    setReportToDelete(null)
+  }
+
   return (
     <div className="overflow-x-auto">
       <div className="flex justify-between items-center mb-2">
@@ -153,7 +237,7 @@ export default function ReportsTable({ reports, loading, onRefresh, onDownload }
               <TableHead className="w-[200px]">
                 <div className="flex items-center">Updated</div>
               </TableHead>
-              <TableHead className="w-[80px]">Action</TableHead>
+              <TableHead className="w-[120px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -176,11 +260,27 @@ export default function ReportsTable({ reports, loading, onRefresh, onDownload }
                   <TableCell>{getPropertyValue(report, "created")}</TableCell>
                   <TableCell>{getPropertyValue(report, "updated")}</TableCell>
                   <TableCell>
-                    {isStatusCompleted(report) && (
-                      <Button variant="ghost" size="icon" onClick={() => handleDownload(report)} title="Download CSV">
-                        <Download className="h-4 w-4" />
+                    <div className="flex items-center gap-2">
+                      {isStatusCompleted(report) && (
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => handleDownload(report)} 
+                          title="Download CSV"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteClick(report)}
+                        title="Eliminar reporte"
+                        className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
-                    )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -194,6 +294,16 @@ export default function ReportsTable({ reports, loading, onRefresh, onDownload }
           </TableBody>
         </Table>
       )}
+
+      {/* Modal de confirmación de eliminación */}
+      <DeleteConfirmationModal
+        isOpen={deleteDialogOpen}
+        onClose={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+        reportId={reportToDelete ? getPropertyValue(reportToDelete, "reportId") : ""}
+        pokemonType={reportToDelete ? getPropertyValue(reportToDelete, "pokemonType") : ""}
+        isDeleting={deleting}
+      />
     </div>
   )
 }
